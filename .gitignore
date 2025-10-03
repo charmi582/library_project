@@ -6,6 +6,8 @@ __pycache__/
 
 # 模型權重與大型輸出檔案
 *.pt
+*.txt
+*.json
 
 # 其他
 /data/
