@@ -1,0 +1,11 @@
+# 專案執行環境與快取
+.venv/
+venv/
+__pycache__/
+*.pyc
+/data/ # 如果 'data' 資料夾內含大量圖片或快取，通常會忽略
+/out/  # 如果 'out' 資料夾是輸出的結果，通常會忽略
+
+# 模型權重與大型輸出檔案
+*.pt   # 忽略所有 .pt 檔案 (例如 best.pt, best2.pt)
+*.json # 如果 roi_coords.json 包含敏感或大型動態數據，可以忽略
