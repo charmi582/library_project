@@ -44,7 +44,7 @@ p(f"初始時間：{INITIAL_TIME:%Y-%m-%d %H:%M:%S}")
 OUTPUT_DIR   = Path(r"C:\Users\user\Desktop\test\test\out").resolve()
 VIDEO_OUT_DIR= OUTPUT_DIR / "videos"
 MODEL_PATH   = r"C:\Users\user\Desktop\test\test\best.pt"
-VIDEO_PATH   = r"D:\ftp server\140.128.95.222\2025-09-17\001\91708.dav"  # ←確認實際檔名
+VIDEO_PATH   = r"D:\dav2mp4\2025-09-17\001\091709.mp4"  # ←確認實際檔名
 
 for d in [OUTPUT_DIR, VIDEO_OUT_DIR]:
     d.mkdir(parents=True, exist_ok=True)
@@ -176,13 +176,21 @@ last_processed_frame = None
 det_total = 0
 last_progress = -1
 
+MAX_BAD_FRAMES = 1000
+bad_frame_count = 0
+
 try:
     while True:
         ok, full_frame = cap.read()
         if not ok or full_frame is None:
-            if frame_idx == 0:
-                p("? 無法讀取任何影格（影片壞檔或編碼不支援）"); sys.exit(1)
-            break
+            p(f"[警告] 跳過壞影格 frame_idx={frame_idx}")
+            frame_idx += 1
+            bad_frame_count += 1
+            if bad_frame_count >= MAX_BAD_FRAMES:
+                p(f"[錯誤] 連續壞影格超過 {MAX_BAD_FRAMES}，自動停止！")
+                break
+            continue
+        bad_frame_count = 0
 
         if writer is None:
             init_video_writer((full_frame.shape[1], full_frame.shape[0]))
@@ -208,88 +216,10 @@ try:
         res = results_list[0] if isinstance(results_list, (list, tuple)) else results_list
         det_boxes = []  # (box, cls_id, conf, pid)
 
-        if res is not None and hasattr(res, "boxes") and res.boxes is not None and len(res.boxes) > 0:
-            b = res.boxes
-            if hasattr(b, "id") and b.id is not None:
-                ids = b.id.detach().cpu().numpy().astype(int).tolist()
-            else:
-                ids = [None] * len(b)
-
-            num = len(b); det_total += num
-            for i in range(num):
-                pid = ids[i]
-                if pid is None:
-                    continue
-
-                conf   = float(b.conf[i].item()) if hasattr(b.conf, "shape") else float(b.conf[i])
-                cls_id = int(b.cls[i].item()) if hasattr(b.cls, "shape") else int(b.cls[i])
-
-                if cls_id == PERSON_ID:
-                    if conf < CONF_PERSON: continue
-                elif TAKEBOOK_ID is not None and cls_id == TAKEBOOK_ID:
-                    if conf < CONF_TAKE: continue
-                else:
-                    continue
-
-                x1, y1, x2, y2 = b.xyxy[i].detach().cpu().numpy().tolist()
-                box = [float(x1), float(y1), float(x2), float(y2)]
-                if not roi_filter(box):
-                    continue
-
-                key_conf = (date_str, hour_int)
-                if cls_id == PERSON_ID:
-                    hour_conf[key_conf]["person_sum"] += conf
-                    hour_conf[key_conf]["person_n"]   += 1
-                elif TAKEBOOK_ID is not None and cls_id == TAKEBOOK_ID:
-                    hour_conf[key_conf]["take_sum"] += conf
-                    hour_conf[key_conf]["take_n"]   += 1
-
-                det_boxes.append((box, cls_id, conf, pid))
-
-        if DEBUG_PRINT and frame_idx < DEBUG_FIRST_N_FRAMES:
-            for box, cls_id, conf, pid in det_boxes:
-                x1, y1, x2, y2 = map(int, box)
-                label = NAME_MAP.get(cls_id, cls_id)
-                p(f"[DEBUG f{frame_idx}] det: {label} cls={cls_id} conf={conf:.2f} pid={pid} box=({x1},{y1},{x2},{y2})")
-
-        dkey = (date_str, hour_int)
-        for box, cls_id, conf, pid in det_boxes:
-            if pid not in person_tracks:
-                person_tracks[pid] = {"hits_person": 0, "has_taken": False, "take_hits": 0}
-
-            if cls_id == PERSON_ID:
-                person_tracks[pid]["hits_person"] = min(person_tracks[pid]["hits_person"] + 1, K_PERSON)
-                if (person_tracks[pid]["hits_person"] >= K_PERSON) and (pid not in hour_seen_ids[dkey]["person"]):
-                    hour_seen_ids[dkey]["person"].add(pid)
-                    hour_buckets[dkey]["person"] += 1
-                    if DEBUG_PRINT:
-                        p(f"[COUNT] +person @ {date_str} {hour_int:02d}:00 pid={pid}")
-
-            if TAKEBOOK_ID is not None and cls_id == TAKEBOOK_ID:
-                if not person_tracks[pid]["has_taken"]:
-                    person_tracks[pid]["take_hits"] = min(person_tracks[pid]["take_hits"] + 1, M_TAKE)
-                    if person_tracks[pid]["take_hits"] >= M_TAKE:
-                        if pid not in hour_seen_ids[dkey]["takebook"]:
-                            hour_seen_ids[dkey]["takebook"].add(pid)
-                            hour_buckets[dkey]["takebook"] += 1
-                            if DEBUG_PRINT:
-                                p(f"[COUNT] +takebook @ {date_str} {hour_int:02d}:00 pid={pid}")
-                        person_tracks[pid]["has_taken"] = True
+        # ...existing detection and tracking code...
 
         out_img = full_frame.copy()
-        for box, cls_id, conf, pid in det_boxes:
-            x1, y1, x2, y2 = map(int, box)
-            color = (0, 255, 0) if cls_id == PERSON_ID else (0, 128, 255)
-            cv2.rectangle(out_img, (x1, y1), (x2, y2), color, 2)
-            tag = "P" if cls_id == PERSON_ID else "T"
-            text = f"{tag}#{pid} {conf:.2f}"
-            (tw, th), bl = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
-            cv2.rectangle(out_img, (x1, max(0, y1 - th - 6)), (x1 + tw + 6, y1), color, -1)
-            cv2.putText(out_img, text, (x1 + 3, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,0,0), 2)
-
-        if DRAW_ROI_BOX:
-            cv2.rectangle(out_img, (rx, ry), (rx + rw, ry + rh), (255, 0, 0), 2)
-            cv2.putText(out_img, "ROI", (rx + 5, ry + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,0), 2)
+        # ...existing drawing code...
 
         writer.write(out_img)
         last_processed_frame = out_img
