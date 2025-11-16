@@ -55,8 +55,8 @@ def setup_logging(log_dir: Path):
     logger.addHandler(console_handler)
 
 # ========= 可開關設定 =========
-ENABLE_VIDEO_OUTPUT = False    # ✅ 是否輸出影片
-ENABLE_EXCEL_OUTPUT = True    # ✅ 是否輸出 Excel 統計結果
+ENABLE_VIDEO_OUTPUT = False     # ✅ 是否輸出影片
+ENABLE_EXCEL_OUTPUT = True      # ✅ 是否輸出 Excel 統計結果
 
 # ========= 加速與裝置設定 =========
 # ... (此區塊代碼不變) ...
@@ -162,14 +162,8 @@ logger.info(f"影片搜尋目錄：{VIDEO_ROOT_DIR}")
 # ========= 載入模型 (只需載入一次) =========
 logger.info("載入模型 (只需一次)…")
 try:
-    # ✨ [修復 ReID 模型載入]
-    # 在載入主模型前，先預載 ReID 模型到快取，避免 FileNotFound 錯誤
-    try:
-        logger.debug("正在檢查/下載 ReID 模型 (osnet_x0_25_msmt17.pt)...")
-        _ = YOLO("osnet_x0_25_msmt17.pt") 
-        logger.debug("ReID 模型 OK")
-    except Exception as e:
-        logger.warning(f"警告：無法預先載入 ReID 模型。如果使用 BoT-SORT 且 with_reid=True，可能會失敗。錯誤：{e}")
+    # ✨ [修改] 移除 ReID 預載入程式碼 (ByteTrack 不需要)
+    # (原 L159-L167 的 ReID 載入 'try...except' 區塊已刪除)
         
     model = YOLO(MODEL_PATH)
     logger.info("? 模型載入 OK")
@@ -241,7 +235,8 @@ CONF_PERSON     = 0.60
 CONF_TAKE       = 0.15
 BASE_CONF       = min(CONF_PERSON, CONF_TAKE)
 MIN_IOU_OVERLAP = 0.3
-TRACKER_CFG = str(Path(ul.__file__).parent / "cfg" / "trackers" / "botsort.yaml")
+# ✨ [修改] 改為使用 bytetrack.yaml
+TRACKER_CFG = str(Path(ul.__file__).parent / "cfg" / "trackers" / "bytetrack.yaml")
 MAX_BAD_FRAMES = 1000
 
 # ========= Excel 輸出相關 (函式定義) =========
@@ -454,6 +449,7 @@ for i, video_path in enumerate(video_files):
                     source=[full_frame], imgsz=IMGSZ, conf=BASE_CONF, iou=IOU_NMS,
                     device=DEVICE, half=HALF, persist=True, verbose=False,
                     tracker=TRACKER_CFG, stream=False
+                    # ✨ [修改] ByteTrack 不需要 reid=True 參數
                 )
 
             timestamp = INITIAL_TIME + timedelta(seconds=frame_idx / float(fps))
@@ -618,5 +614,4 @@ for i, video_path in enumerate(video_files):
         
         logger.info("---") # (修改) 分隔下一部影片
 
-logger.info("\n🎉🎉🎉 所有批次處理任務皆已完成。 🎉🎉🎉") # (修改)
-
+logger.info("\n🎉🎉🎉 所有批次處理任務皆已完成。 🎉🎉🎉")
